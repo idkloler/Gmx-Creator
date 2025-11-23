@@ -1,0 +1,10 @@
+curl_cffi
+structlog
+colorama
+faker
+beautifulsoup4
+numpy
+pillow
+edwh-uuid7
+colorist
+colorlog
