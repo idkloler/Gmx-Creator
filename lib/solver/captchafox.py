@@ -51,7 +51,6 @@ def find_x(px):
     }
 
 def leadzero(s: str, n: int) -> bool:
-    # Keep exact compatibility with the original logic
     if len(s) < n + 1:
         return False
     return s[:n] == "0" * n
