@@ -107,7 +107,7 @@ class Solver:
     def __init__(self, lang: str = "en", proxy: str | None = None) -> None:
         self.lang = lang
         self.proxy = proxy
-        self.session = Session(impersonate="firefox135")
+        self.session = Session(impersonate="chrome133a")
         self.sitekey = "sk_vKdD8WGlPF5FKpRDs1U4qTuu6Jv0w"
         self.host = "signup.gmx.com"
         self.base_url = "https://mam-api.captchafox.com"
