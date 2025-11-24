@@ -291,11 +291,10 @@ class Solver:
         vj = self._verify(challenge, px, t, moves)
         if vj.get("solved"):
             logger.info(
-            f"{C["pink"]}Solved  Captcha{Fore.RESET} "+
-            f"| {C["gray"]}{vj.get("token")[:28]}{Fore.RESET} "+
-            f"| {C["gray"]}{time.time() - st:.2f}s.{Fore.RESET}"
-        )
-            return {"token": vj.get("token")}
-        raise Exception(
-            f"not solved (solved: {vj.get('solved')} - failed: {vj.get('failed', False)})"
-        )
+                f"{C["pink"]}Solved  Captcha{Fore.RESET} "+
+                f"| {C["gray"]}{vj["token"][:28]}{Fore.RESET} "+
+                f"| {C["gray"]}{time.time() - st:.2f}s.{Fore.RESET}"
+            )
+            return {"token": vj["token"], "status": "solved"}
+        else:
+            return {"token": None, "status": "failed"}
