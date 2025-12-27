@@ -10,7 +10,6 @@ from curl_cffi import CurlHttpVersion, Session
 from edwh_uuid7 import uuid7
 from faker import Faker
 from lib.console.console import C, Console, Fore
-from lib.module.imap_enabler import enablePop3AndImap
 from lib.solver.captchafox import Solver
 
 
@@ -175,31 +174,9 @@ class GmxRegister:
                 f"| {C['gray']}{email}{Fore.RESET} " +
                 f"| {C['gray']}{time.time() - start:.2f}s.{Fore.RESET}"
             )
-            enable_start = time.time()
-            self.logger.info("Enabling imap/pop3")
-            attempts = 4
-            for attempt in range(1, attempts + 1):
-                try:
-                    status = enablePop3AndImap(email, password)
-                except Exception as exc:
-                    if "Account Locked" in str(exc):
-                        return False
-                    self.logger.debug(f"{email}{password}")
-                    self.logger.warning(f"imap/pop3 enable attempt {attempt}/{attempts} raised: {exc}")
-                    status = False
-                if status is True:
-                    self.logger.info(
-                        "Enabled imap/pop3 "
-                        f"| {C['gray']}{email}{Fore.RESET} " +
-                        f"| {C['gray']}{time.time() - enable_start:.2f}s.{Fore.RESET}"
-                    )
-                    open('accounts.txt', 'a+').write(f'{email}:{password}\n')
-                    return True
-                if attempt < attempts:
-                    self.logger.warning(f"imap/pop3 enable failed ({attempt}/{attempts}), retrying...")
-                    time.sleep(2)
-            self.logger.error(f"{C['red']}Failed enabling imap/pop3 after {attempts} attempts{Fore.RESET}")
-            return False
+            with open("accounts.txt", "a+") as f:
+                f.write(f"\n{email}:{pass}")
+            return True
         else:
             if regist.status_code == 403:
                 self.logger.error(f"{C['red']}Unknown Error  {Fore.RESET}")
