@@ -10,10 +10,11 @@ import numpy as np
 from PIL import Image
 from curl_cffi import Session, CurlHttpVersion
 from lib.console.console import Console, C, Fore
+from lib.solver.fingerprint import challenge_fp, verify_fp
 
 
 gap = 23
-sex = [10, 25, 60, 95, 105]
+uow = [10, 25, 60, 95, 105]
 logger = Console()
 
 
@@ -25,29 +26,33 @@ def find_gap(data):
         img = Image.open(BytesIO(data))
     else:
         img = Image.open(data)
-    img = img.convert('RGBA')
-    px = np.array(img)
+    px = np.array(img.convert("RGBA"), copy=False)
     res = find_x(px)
     if res is None:
         raise Exception("no pixel")
     return res
 
 def find_x(px):
-    _, xlen, _ = px.shape
-    hits = []
-    for y in sex:
-        row = px[y]
-        mask_rgb = (row[:, 0] != 0) & (row[:, 1] != 0) & (row[:, 2] != 0)
-        mask_a = row[:, 3] == 255
-        mask = mask_rgb & mask_a
-        idx = np.argmax(mask) if mask.any() else None
-        if idx is not None and mask.any():
-            hits.append({"x": int(idx), "y": y})
-    if not hits:
+    rows = np.asarray(uow, dtype=np.int64)
+    rows = rows[rows < px.shape[0]]
+    if rows.size == 0:
         return None
+
+    subset = px[rows, :, :]
+    mask_rgb = (subset[:, :, :3] != 0).all(axis=2)
+    mask_a = subset[:, :, 3] == 255
+    mask = mask_rgb & mask_a
+
+    has_hit = mask.any(axis=1)
+    if not has_hit.any():
+        return None
+
+    first_hits = mask.argmax(axis=1)[has_hit]
+    used_rows = rows[has_hit]
+
     return {
-        "x": int(avg([m["x"] for m in hits])) + gap,
-        "y": int(avg([m["y"] for m in hits]))
+        "x": int(first_hits.mean()) + gap,
+        "y": int(used_rows.mean())
     }
 
 def leadzero(s: str, n: int) -> bool:
@@ -85,32 +90,20 @@ def pack(d: dict) -> bytes:
 def _prep(d: dict) -> bytes:
     return json.dumps(d, separators=(",", ":")).encode("utf-8")
 
-
 ua = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/142.0.0.0 Safari/537.36"
 icon = 50
 slider_width = 300
 slider_knob = 32
 
-_CHALLENGE_FP = None
-_VERIFY_FP = None
-
-
-def _load_fp(filename: str) -> dict:
-    global _CHALLENGE_FP, _VERIFY_FP
-    path = os.path.join(os.path.dirname(__file__), filename)
-    with open(path, "r") as f:
-        data = json.load(f)["cs"]
-    return data
-
-
 class Solver:
     def __init__(self, lang: str = "en", proxy: str | None = None) -> None:
         self.lang = lang
         self.proxy = proxy
-        self.session = Session(impersonate="chrome133a")
+        self.session = Session(impersonate="firefox135")
         self.sitekey = "sk_vKdD8WGlPF5FKpRDs1U4qTuu6Jv0w"
         self.host = "signup.gmx.com"
         self.base_url = "https://mam-api.captchafox.com"
+        self.gpu = random.choice(open(os.path.join(os.path.dirname(__file__), "gpus.txt")).readlines())
         if proxy:
             self.session.proxies.update(
                 {
@@ -127,10 +120,7 @@ class Solver:
         })
 
     def _get_config(self) -> dict:
-        logger.info(
-            f"{C["pink"]}Solving Captcha{Fore.RESET} "+
-            f"| {C["gray"]}{self.sitekey[:28]}{Fore.RESET} "
-        )
+        logger.info(f"{C["pink"]}Solving Captcha{Fore.RESET}")
         cfg = self.session.get(
             f"{self.base_url}/captcha/{self.sitekey}/config?site=https://signup.gmx.com/",
             headers={
@@ -155,11 +145,7 @@ class Solver:
         return c
 
     def _create_challenge(self, config: dict) -> dict:
-        global _CHALLENGE_FP
-        if _CHALLENGE_FP is None:
-            _CHALLENGE_FP = _load_fp("challenge.json")
-        fp = dict(_CHALLENGE_FP)
-        fp["CF0106"] = int(time.time()*1000)
+        fp = challenge_fp(self.host, ua, self.gpu)
         ch_payload = {
             "lng": self.lang,
             "h": config.get("h"),
@@ -195,14 +181,15 @@ class Solver:
         return chj
 
     def _calculate_position(self, challenge: dict) -> int:
+        st = time.time()
         import base64
-
         bg = challenge["challenge"]["bg"]
         img_b64 = bg[bg.index(",") + 1 :]
         img = base64.b64decode(img_b64)
         gap_data = find_gap(img)
         px = int(gap_data["x"] / 2) - (icon // 2) + random.randint(-5, 5)
         px = max(0, min(px, slider_width - slider_knob))
+        #logger.info(f"Prediction: {px} {time.time() - st:.2f}s.")
         return px
 
     def _generate_trail(self, target: int) -> tuple[list[int], float]:
@@ -240,11 +227,7 @@ class Solver:
 
     def _verify(self, challenge: dict, px: int, t: float, moves: List[int]) -> dict:
         #print(moves)
-        global _VERIFY_FP
-        if _VERIFY_FP is None:
-            _VERIFY_FP = _load_fp("verify.json")
-        fp = dict(_VERIFY_FP)
-        fp["CF0106"] = int(time.time()*1000)
+        fp = verify_fp(self.host, ua, self.gpu)
         v_payload = {
             "sk": self.sitekey,
             "mv": moves,
@@ -291,10 +274,11 @@ class Solver:
         vj = self._verify(challenge, px, t, moves)
         if vj.get("solved"):
             logger.info(
-                f"{C["pink"]}Solved  Captcha{Fore.RESET} "+
-                f"| {C["gray"]}{vj["token"][:28]}{Fore.RESET} "+
-                f"| {C["gray"]}{time.time() - st:.2f}s.{Fore.RESET}"
-            )
-            return {"token": vj["token"], "status": "solved"}
-        else:
-            return {"token": None, "status": "failed"}
+            f"{C["pink"]}Solved  Captcha{Fore.RESET} "+
+            f"| {C["gray"]}{vj.get("token")[:25]}...{Fore.RESET} "+
+            f"| {C["gray"]}{time.time() - st:.2f}s.{Fore.RESET}"
+        )
+            return {"token": vj.get("token")}
+        raise Exception(
+            f"not solved (solved: {vj.get('solved')} - failed: {vj.get('failed', False)})"
+        )
